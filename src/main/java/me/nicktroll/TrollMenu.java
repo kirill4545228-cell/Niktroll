@@ -10,9 +10,12 @@ import org.bukkit.Material;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Creeper;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -25,20 +28,16 @@ import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.util.Vector;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class TrollMenu implements CommandExecutor, Listener {
 
     private static final int PER_PAGE = 45;
-
     private final NickTrollPlugin plugin;
     private final NickManager nicks;
     private final Set<UUID> awaitingInput = ConcurrentHashMap.newKeySet();
+    private final Set<UUID> fallImmune = ConcurrentHashMap.newKeySet(); // Для отмены урона при падении
 
     public TrollMenu(NickTrollPlugin plugin, NickManager nicks) {
         this.plugin = plugin;
@@ -125,29 +124,30 @@ public class TrollMenu implements CommandExecutor, Listener {
 
     private void openActions(Player viewer, Player target) {
         ActionHolder holder = new ActionHolder(target.getUniqueId());
-        Inventory inv = Bukkit.createInventory(holder, 45,
+        Inventory inv = Bukkit.createInventory(holder, 54,
                 Component.text("Игрок: " + target.getName()));
         holder.inv = inv;
 
+        // Базовые
         inv.setItem(10, item(Material.ENDER_PEARL, "Телепортироваться к игроку", NamedTextColor.LIGHT_PURPLE));
         inv.setItem(11, item(Material.TNT, "Убить", NamedTextColor.RED));
         inv.setItem(12, item(Material.DIAMOND, "Выдать 1 алмаз", NamedTextColor.AQUA));
         inv.setItem(13, item(Material.LIGHTNING_ROD, "Ударить молнией", NamedTextColor.YELLOW));
-        inv.setItem(14, item(Material.FIREWORK_ROCKET, "Подбросить вверх", NamedTextColor.GOLD));
+        inv.setItem(14, item(Material.FIREWORK_ROCKET, "Подбросить вверх", NamedTextColor.GOLD, "Урон при падении отключён"));
 
-        inv.setItem(19, item(Material.COBWEB, "Заморозить (эффект Slowness 255)", NamedTextColor.DARK_AQUA,
-                "Накладывает сильное замедление на 10 секунд"));
-        inv.setItem(20, item(Material.ROTTEN_FLESH, "Отравить (эффект Poison)", NamedTextColor.DARK_GREEN,
-                "Накладывает отравление на 8 секунд"));
-        inv.setItem(21, item(Material.FEATHER, "Подбросить с эффектом Levitation", NamedTextColor.WHITE,
-                "Медленно поднимает игрока вверх на 5 секунд"));
-        inv.setItem(22, item(Material.CHEST, "Открыть инвентарь игрока", NamedTextColor.GRAY,
-                "Позволяет заглянуть в инвентарь цели"));
-        inv.setItem(23, item(Material.PUFFERFISH, "Случайный эффект", NamedTextColor.DARK_PURPLE,
-                "Накладывает случайный негативный эффект"));
+        // Эффекты
+        inv.setItem(19, item(Material.COBWEB, "Заморозить (Slowness 255)", NamedTextColor.DARK_AQUA));
+        inv.setItem(20, item(Material.ROTTEN_FLESH, "Отравить (Poison)", NamedTextColor.DARK_GREEN));
+        inv.setItem(21, item(Material.FEATHER, "Левитация", NamedTextColor.WHITE));
+        inv.setItem(22, item(Material.CHEST, "Открыть инвентарь игрока", NamedTextColor.GRAY));
+        inv.setItem(23, item(Material.PUFFERFISH, "Случайный эффект", NamedTextColor.DARK_PURPLE));
 
-        inv.setItem(40, item(Material.ARROW, "← К списку игроков", NamedTextColor.GRAY));
+        // Новые функции
+        inv.setItem(28, item(Material.CREEPER_HEAD, "Спавн заряженного крипера", NamedTextColor.GREEN, "Спавнит крипера сразу за игроком"));
+        inv.setItem(29, item(Material.BEDROCK, "Заточить в бедроковую коробку", NamedTextColor.DARK_GRAY, "Создаёт клетку 3x3 вокруг игрока"));
+        inv.setItem(30, item(Material.DRAGON_EGG, "Убрать чанк над игроком", NamedTextColor.LIGHT_PURPLE, "Удаляет все блоки над игроком (осторожно!)"));
 
+        inv.setItem(49, item(Material.ARROW, "← К списку игроков", NamedTextColor.GRAY));
         viewer.openInventory(inv);
     }
 
@@ -211,28 +211,82 @@ public class TrollMenu implements CommandExecutor, Listener {
             case 11 -> target.setHealth(0);
             case 12 -> target.getInventory().addItem(new ItemStack(Material.DIAMOND, 1));
             case 13 -> target.getWorld().strikeLightning(target.getLocation());
-            case 14 -> target.setVelocity(new Vector(0, 1.5, 0));
-            case 19 -> {
-                target.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 200, 255));
-                player.sendMessage(Component.text("Игрок заморожен.", NamedTextColor.GREEN));
+            case 14 -> { // Подброс с защитой от урона
+                target.setVelocity(new Vector(0, 1.5, 0));
+                fallImmune.add(target.getUniqueId());
+                Bukkit.getScheduler().runTaskLater(plugin, () -> fallImmune.remove(target.getUniqueId()), 200L); // 10 сек
+                player.sendMessage(Component.text("Игрок подброшен (урон при падении отключён).", NamedTextColor.GREEN));
             }
-            case 20 -> {
-                target.addPotionEffect(new PotionEffect(PotionEffectType.POISON, 160, 1));
-                player.sendMessage(Component.text("Игрок отравлен.", NamedTextColor.GREEN));
-            }
-            case 21 -> {
-                target.addPotionEffect(new PotionEffect(PotionEffectType.LEVITATION, 100, 1));
-                player.sendMessage(Component.text("Игрок подброшен.", NamedTextColor.GREEN));
-            }
+            case 19 -> target.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 200, 255));
+            case 20 -> target.addPotionEffect(new PotionEffect(PotionEffectType.POISON, 160, 1));
+            case 21 -> target.addPotionEffect(new PotionEffect(PotionEffectType.LEVITATION, 100, 1));
             case 22 -> player.openInventory(target.getInventory());
             case 23 -> {
                 PotionEffectType[] effects = {PotionEffectType.BLINDNESS, PotionEffectType.NAUSEA,
                         PotionEffectType.WEAKNESS, PotionEffectType.MINING_FATIGUE};
                 PotionEffectType random = effects[(int) (Math.random() * effects.length)];
                 target.addPotionEffect(new PotionEffect(random, 200, 1));
-                player.sendMessage(Component.text("Наложен случайный эффект: " + random.getKey().getKey(), NamedTextColor.GREEN));
+                player.sendMessage(Component.text("Наложен эффект: " + random.getKey().getKey(), NamedTextColor.GREEN));
             }
-            case 40 -> openSelector(player, 0);
+            case 28 -> { // Заряженный крипер
+                Creeper creeper = (Creeper) target.getWorld().spawnEntity(target.getLocation().add(0, 0, 1), EntityType.CREEPER);
+                creeper.setPowered(true);
+                player.sendMessage(Component.text("Заряженный крипер заспавнен.", NamedTextColor.GREEN));
+            }
+            case 29 -> { // Бедроковая коробка
+                createBedrockBox(target);
+                player.sendMessage(Component.text("Игрок заточён в бедроковую коробку.", NamedTextColor.GREEN));
+            }
+            case 30 -> { // Удаление чанка над игроком
+                removeChunkAbove(target);
+                player.sendMessage(Component.text("Чанк над игроком очищен.", NamedTextColor.GREEN));
+            }
+            case 49 -> openSelector(player, 0);
+        }
+    }
+
+    private void createBedrockBox(Player target) {
+        var world = target.getWorld();
+        var loc = target.getLocation();
+        int x = loc.getBlockX();
+        int y = loc.getBlockY();
+        int z = loc.getBlockZ();
+        // Создаём коробку 3x3x3 из бедрока
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    if (dx == 0 && dy == 0 && dz == 0) continue; // Внутри воздух
+                    world.getBlockAt(x + dx, y + dy, z + dz).setType(Material.BEDROCK);
+                }
+            }
+        }
+    }
+
+    private void removeChunkAbove(Player target) {
+        var world = target.getWorld();
+        var loc = target.getLocation();
+        int startY = loc.getBlockY() + 1;
+        int maxY = world.getMaxHeight();
+        int x = loc.getBlockX();
+        int z = loc.getBlockZ();
+        // Проходим по области 16x16 над игроком
+        for (int dx = -8; dx <= 8; dx++) {
+            for (int dz = -8; dz <= 8; dz++) {
+                for (int y = startY; y < maxY; y++) {
+                    if (world.getBlockAt(x + dx, y, z + dz).getType() != Material.AIR) {
+                        world.getBlockAt(x + dx, y, z + dz).setType(Material.AIR);
+                    }
+                }
+            }
+        }
+    }
+
+    @EventHandler
+    public void onFallDamage(EntityDamageEvent e) {
+        if (e.getCause() == EntityDamageEvent.DamageCause.FALL
+                && e.getEntity() instanceof Player p
+                && fallImmune.contains(p.getUniqueId())) {
+            e.setCancelled(true);
         }
     }
 
@@ -261,5 +315,6 @@ public class TrollMenu implements CommandExecutor, Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent e) {
         awaitingInput.remove(e.getPlayer().getUniqueId());
+        fallImmune.remove(e.getPlayer().getUniqueId());
     }
 }
