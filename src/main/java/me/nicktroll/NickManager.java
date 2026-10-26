@@ -8,7 +8,11 @@ import org.bukkit.Bukkit;
 import org.bukkit.Sound;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Display;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.TextDisplay;
+import org.bukkit.scoreboard.Scoreboard;
+import org.bukkit.scoreboard.Team;
 
 import java.io.File;
 import java.io.IOException;
@@ -43,8 +47,7 @@ public class NickManager {
                     originals.put(id, original);
                     nicks.put(id, nick);
                 }
-            } catch (IllegalArgumentException ignored) {
-            }
+            } catch (IllegalArgumentException ignored) {}
         }
     }
 
@@ -62,13 +65,8 @@ public class NickManager {
         }
     }
 
-    public boolean hasNick(UUID id) {
-        return nicks.containsKey(id);
-    }
-
-    public String getOriginal(UUID id) {
-        return originals.get(id);
-    }
+    public boolean hasNick(UUID id) { return nicks.containsKey(id); }
+    public String getOriginal(UUID id) { return originals.get(id); }
 
     public Player findOnline(String name) {
         for (Player p : Bukkit.getOnlinePlayers()) {
@@ -121,11 +119,11 @@ public class NickManager {
     }
 
     /**
-     * Меняет профиль игрока и принудительно обновляет его для всех остальных.
-     * Скин сохраняется. Поддерживает цветовые коды через '&'.
+     * Меняет профиль (таб/чат) и создаёт невидимый TextDisplay для наместника.
+     * Поддерживает цветовые коды через '&'.
      */
     private void apply(Player player, String name) {
-        // 1. Создаём новый профиль с тем же UUID и свойствами (скин)
+        // 1. Обновляем профиль (таб, чат)
         PlayerProfile oldProfile = player.getPlayerProfile();
         PlayerProfile newProfile = Bukkit.createProfile(player.getUniqueId(), name);
         for (ProfileProperty property : oldProfile.getProperties()) {
@@ -133,21 +131,35 @@ public class NickManager {
         }
         player.setPlayerProfile(newProfile);
 
-        // 2. Устанавливаем отображаемое имя с поддержкой цветов
-        Component display = LEGACY.deserialize(name).decoration(
-                net.kyori.adventure.text.format.TextDecoration.ITALIC, false
-        );
+        // 2. Отображаемое имя
+        Component display = LEGACY.deserialize(name).decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false);
         player.displayName(display);
         player.playerListName(display);
 
-        // 3. Принудительно обновляем игрока для всех остальных,
-        //    чтобы ник над головой изменился у всех на клиенте.
-        //    Простой трюк: скрыть и показать игрока всем.
-        for (Player online : Bukkit.getOnlinePlayers()) {
-            if (online.equals(player)) continue;
-            online.hidePlayer(plugin, player);
-            online.showPlayer(plugin, player);
+        // 3. Скрываем старый наместник через Scoreboard Team
+        Scoreboard board = Bukkit.getScoreboardManager().getMainScoreboard();
+        Team team = board.getTeam("nick_" + player.getName());
+        if (team == null) team = board.registerNewTeam("nick_" + player.getName());
+        team.addEntry(player.getName());
+        team.setOption(Team.Option.NAME_TAG_VISIBILITY, Team.OptionStatus.NEVER);
+
+        // 4. Создаём TextDisplay над головой (следует за игроком)
+        for (TextDisplay td : player.getWorld().getEntitiesByClass(TextDisplay.class)) {
+            if (td.getScoreboardTags().contains("nick_" + player.getUniqueId())) td.remove();
         }
+        TextDisplay textDisplay = player.getWorld().spawn(player.getLocation().add(0, 2.2, 0), TextDisplay.class);
+        textDisplay.text(display);
+        textDisplay.setBillboard(Display.Billboard.CENTER);
+        textDisplay.addScoreboardTag("nick_" + player.getUniqueId());
+
+        // Запускаем таск для следования за игроком
+        Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (!player.isOnline() || !textDisplay.isValid()) {
+                textDisplay.remove();
+                return;
+            }
+            textDisplay.teleport(player.getLocation().add(0, 2.2, 0));
+        }, 1L, 1L);
     }
 
     private void playThunder() {
