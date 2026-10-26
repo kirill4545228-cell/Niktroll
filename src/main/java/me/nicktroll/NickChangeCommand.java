@@ -15,7 +15,8 @@ import java.util.regex.Pattern;
 
 public class NickChangeCommand implements CommandExecutor, TabCompleter {
 
-    private static final Pattern VALID = Pattern.compile("[A-Za-z0-9_]{1,16}");
+    // Разрешаем латиницу, цифры, '_' и символ '&' для цветовых кодов
+    private static final Pattern VALID = Pattern.compile("[A-Za-z0-9_&]{1,32}");
     private final NickManager nicks;
 
     public NickChangeCommand(NickManager nicks) {
@@ -43,7 +44,6 @@ public class NickChangeCommand implements CommandExecutor, TabCompleter {
         String newName = args[1];
         String original = nicks.getOriginal(target.getUniqueId());
 
-        // Сброс ника
         if (newName.equalsIgnoreCase("reset") || (original != null && original.equalsIgnoreCase(newName))) {
             if (nicks.resetNick(target)) {
                 msg(sender, "Ник игрока " + oldName + " сброшен на " + target.getName() + ".", NamedTextColor.GREEN);
@@ -54,7 +54,7 @@ public class NickChangeCommand implements CommandExecutor, TabCompleter {
         }
 
         if (!VALID.matcher(newName).matches()) {
-            msg(sender, "Ник: 1–16 символов, только латиница, цифры и _.", NamedTextColor.RED);
+            msg(sender, "Ник: 1–32 символа, латиница, цифры, '_' и '&' для цветов.", NamedTextColor.RED);
             return true;
         }
 
