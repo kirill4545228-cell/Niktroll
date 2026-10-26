@@ -1,0 +1,21 @@
+name: NickTroll
+version: 1.0.0
+main: me.nicktroll.NickTrollPlugin
+api-version: '1.21'
+description: Полная смена ника и меню троллинга игроков
+
+commands:
+  nickchange:
+    description: Полностью сменить ник игрока
+    usage: /nickchange <игрок> <новый ник|reset>
+    permission: nicktroll.nickchange
+  playertroll:
+    description: Меню троллинга игроков
+    usage: /playertroll
+    permission: nicktroll.playertroll
+
+permissions:
+  nicktroll.nickchange:
+    default: op
+  nicktroll.playertroll:
+    default: op
