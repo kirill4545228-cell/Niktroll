@@ -1,0 +1,86 @@
+package me.nicktroll;
+
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.Bukkit;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandExecutor;
+import org.bukkit.command.CommandSender;
+import org.bukkit.command.TabCompleter;
+import org.bukkit.entity.Player;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Pattern;
+
+public class NickChangeCommand implements CommandExecutor, TabCompleter {
+
+    private static final Pattern VALID = Pattern.compile("[A-Za-z0-9_]{1,16}");
+    private final NickManager nicks;
+
+    public NickChangeCommand(NickManager nicks) {
+        this.nicks = nicks;
+    }
+
+    private void msg(CommandSender s, String text, NamedTextColor color) {
+        s.sendMessage(Component.text(text, color));
+    }
+
+    @Override
+    public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
+        if (args.length != 2) {
+            msg(sender, "Использование: /nickchange <игрок> <новый ник|reset>", NamedTextColor.RED);
+            return true;
+        }
+
+        Player target = nicks.findOnline(args[0]);
+        if (target == null) {
+            msg(sender, "Игрок не найден (он должен быть онлайн).", NamedTextColor.RED);
+            return true;
+        }
+
+        String oldName = target.getName();
+        String newName = args[1];
+        String original = nicks.getOriginal(target.getUniqueId());
+
+        // Сброс ника
+        if (newName.equalsIgnoreCase("reset") || (original != null && original.equalsIgnoreCase(newName))) {
+            if (nicks.resetNick(target)) {
+                msg(sender, "Ник игрока " + oldName + " сброшен на " + target.getName() + ".", NamedTextColor.GREEN);
+            } else {
+                msg(sender, "У этого игрока нет изменённого ника.", NamedTextColor.YELLOW);
+            }
+            return true;
+        }
+
+        if (!VALID.matcher(newName).matches()) {
+            msg(sender, "Ник: 1–16 символов, только латиница, цифры и _.", NamedTextColor.RED);
+            return true;
+        }
+
+        if (nicks.isNameTaken(newName, target.getUniqueId())) {
+            msg(sender, "Этот ник уже занят.", NamedTextColor.RED);
+            return true;
+        }
+
+        nicks.setNick(target, newName);
+        msg(sender, "Ник игрока " + oldName + " изменён на " + newName + ".", NamedTextColor.GREEN);
+        if (!target.equals(sender)) {
+            msg(target, "Ваш ник теперь " + newName + ".", NamedTextColor.GOLD);
+        }
+        return true;
+    }
+
+    @Override
+    public List<String> onTabComplete(CommandSender sender, Command cmd, String alias, String[] args) {
+        List<String> result = new ArrayList<>();
+        if (args.length == 1) {
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                if (p.getName().toLowerCase().startsWith(args[0].toLowerCase())) result.add(p.getName());
+            }
+        } else if (args.length == 2 && "reset".startsWith(args[1].toLowerCase())) {
+            result.add("reset");
+        }
+        return result;
+    }
+}
