@@ -1,7 +1,9 @@
 package me.nicktroll;
 
 import com.destroystokyo.paper.profile.PlayerProfile;
+import com.destroystokyo.paper.profile.ProfileProperty;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Sound;
 import org.bukkit.configuration.ConfigurationSection;
@@ -20,6 +22,7 @@ public class NickManager {
     private final File file;
     private final Map<UUID, String> originals = new HashMap<>();
     private final Map<UUID, String> nicks = new HashMap<>();
+    private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.legacyAmpersand();
 
     public NickManager(NickTrollPlugin plugin) {
         this.plugin = plugin;
@@ -67,7 +70,6 @@ public class NickManager {
         return originals.get(id);
     }
 
-    /** Ищет онлайн-игрока по настоящему нику, старому нику или текущему (новому) нику. */
     public Player findOnline(String name) {
         for (Player p : Bukkit.getOnlinePlayers()) {
             UUID id = p.getUniqueId();
@@ -118,16 +120,34 @@ public class NickManager {
         if (nick != null) apply(player, nick);
     }
 
-    /** Меняет профиль игрока: ник над головой, в табе, в чате. Скин сохраняется. */
+    /**
+     * Меняет профиль игрока и принудительно обновляет его для всех остальных.
+     * Скин сохраняется. Поддерживает цветовые коды через '&'.
+     */
     private void apply(Player player, String name) {
-        PlayerProfile old = player.getPlayerProfile();
-        PlayerProfile profile = Bukkit.createProfile(player.getUniqueId(), name);
-        profile.setProperties(old.getProperties()); // сохраняем скин
-        player.setPlayerProfile(profile);
+        // 1. Создаём новый профиль с тем же UUID и свойствами (скин)
+        PlayerProfile oldProfile = player.getPlayerProfile();
+        PlayerProfile newProfile = Bukkit.createProfile(player.getUniqueId(), name);
+        for (ProfileProperty property : oldProfile.getProperties()) {
+            newProfile.setProperty(property);
+        }
+        player.setPlayerProfile(newProfile);
 
-        Component component = Component.text(name);
-        player.displayName(component);
-        player.playerListName(component);
+        // 2. Устанавливаем отображаемое имя с поддержкой цветов
+        Component display = LEGACY.deserialize(name).decoration(
+                net.kyori.adventure.text.format.TextDecoration.ITALIC, false
+        );
+        player.displayName(display);
+        player.playerListName(display);
+
+        // 3. Принудительно обновляем игрока для всех остальных,
+        //    чтобы ник над головой изменился у всех на клиенте.
+        //    Простой трюк: скрыть и показать игрока всем.
+        for (Player online : Bukkit.getOnlinePlayers()) {
+            if (online.equals(player)) continue;
+            online.hidePlayer(plugin, player);
+            online.showPlayer(plugin, player);
+        }
     }
 
     private void playThunder() {
