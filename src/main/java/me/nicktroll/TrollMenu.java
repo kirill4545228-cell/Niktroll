@@ -6,7 +6,6 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
-import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -29,7 +28,6 @@ import org.bukkit.util.Vector;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -75,25 +73,29 @@ public class TrollMenu implements CommandExecutor, Listener {
     private ItemStack item(Material material, String name, NamedTextColor color, String... lore) {
         ItemStack stack = new ItemStack(material);
         ItemMeta meta = stack.getItemMeta();
-        meta.displayName(Component.text(name, color).decoration(TextDecoration.ITALIC, false));
-        if (lore.length > 0) {
-            meta.lore(Arrays.stream(lore)
-                    .map(l -> Component.text(l, NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false))
-                    .toList());
+        if (meta != null) {
+            meta.displayName(Component.text(name, color).decoration(TextDecoration.ITALIC, false));
+            if (lore.length > 0) {
+                meta.lore(Arrays.stream(lore)
+                        .map(l -> Component.text(l, NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false))
+                        .toList());
+            }
+            stack.setItemMeta(meta);
         }
-        stack.setItemMeta(meta);
         return stack;
     }
 
     private ItemStack head(Player target) {
         ItemStack stack = new ItemStack(Material.PLAYER_HEAD);
         SkullMeta meta = (SkullMeta) stack.getItemMeta();
-        meta.setOwningPlayer(target);
-        meta.displayName(Component.text(target.getName(), NamedTextColor.GREEN)
-                .decoration(TextDecoration.ITALIC, false));
-        meta.lore(List.of(Component.text("Нажми, чтобы выбрать", NamedTextColor.GRAY)
-                .decoration(TextDecoration.ITALIC, false)));
-        stack.setItemMeta(meta);
+        if (meta != null) {
+            meta.setOwningPlayer(target);
+            meta.displayName(Component.text(target.getName(), NamedTextColor.GREEN)
+                    .decoration(TextDecoration.ITALIC, false));
+            meta.lore(List.of(Component.text("Нажми, чтобы выбрать", NamedTextColor.GRAY)
+                    .decoration(TextDecoration.ITALIC, false)));
+            stack.setItemMeta(meta);
+        }
         return stack;
     }
 
@@ -127,14 +129,12 @@ public class TrollMenu implements CommandExecutor, Listener {
                 Component.text("Игрок: " + target.getName()));
         holder.inv = inv;
 
-        // Базовые действия
         inv.setItem(10, item(Material.ENDER_PEARL, "Телепортироваться к игроку", NamedTextColor.LIGHT_PURPLE));
         inv.setItem(11, item(Material.TNT, "Убить", NamedTextColor.RED));
         inv.setItem(12, item(Material.DIAMOND, "Выдать 1 алмаз", NamedTextColor.AQUA));
         inv.setItem(13, item(Material.LIGHTNING_ROD, "Ударить молнией", NamedTextColor.YELLOW));
         inv.setItem(14, item(Material.FIREWORK_ROCKET, "Подбросить вверх", NamedTextColor.GOLD));
 
-        // Новые действия
         inv.setItem(19, item(Material.COBWEB, "Заморозить (эффект Slowness 255)", NamedTextColor.DARK_AQUA,
                 "Накладывает сильное замедление на 10 секунд"));
         inv.setItem(20, item(Material.ROTTEN_FLESH, "Отравить (эффект Poison)", NamedTextColor.DARK_GREEN,
@@ -146,7 +146,6 @@ public class TrollMenu implements CommandExecutor, Listener {
         inv.setItem(23, item(Material.PUFFERFISH, "Случайный эффект", NamedTextColor.DARK_PURPLE,
                 "Накладывает случайный негативный эффект"));
 
-        // Кнопка возврата
         inv.setItem(40, item(Material.ARROW, "← К списку игроков", NamedTextColor.GRAY));
 
         viewer.openInventory(inv);
@@ -235,14 +234,8 @@ public class TrollMenu implements CommandExecutor, Listener {
             }
             case 40 -> openSelector(player, 0);
         }
-        // После действия оставляем меню открытым (кроме возврата)
-        if (slot != 40) {
-            // Можно оставить открытым, но для удобства перерисовываем
-            // openActions(player, target); // если нужно обновить
-        }
     }
 
-    // Обработка ручного ввода ника
     @EventHandler
     public void onChat(AsyncChatEvent e) {
         Player player = e.getPlayer();
@@ -255,7 +248,6 @@ public class TrollMenu implements CommandExecutor, Listener {
             return;
         }
 
-        // Ищем игрока в основном потоке
         Bukkit.getScheduler().runTask(plugin, () -> {
             Player target = nicks.findOnline(message);
             if (target == null) {
@@ -263,22 +255,6 @@ public class TrollMenu implements CommandExecutor, Listener {
             } else {
                 openActions(player, target);
             }
-        });
-    }
-
-    @EventHandler
-    public void onQuit(PlayerQuitEvent e) {
-        awaitingInput.remove(e.getPlayer().getUniqueId());
-    }
-}ponent.text("Отменено.", NamedTextColor.YELLOW));
-                return;
-            }
-            Player target = nicks.findOnline(text);
-            if (target == null) {
-                player.sendMessage(Component.text("Игрок «" + text + "» не найден онлайн.", NamedTextColor.RED));
-                return;
-            }
-            openActions(player, target);
         });
     }
 
